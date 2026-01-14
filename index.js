@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import carouselRoutes from './Routes/carouselRoutes.js';
 import productRoutes from './Routes/productRoutes.js';
+import addressRoutes from './Routes/addressRoutes.js';
+import orderRoutes from './Routes/orderRoutes.js';
 
 dotenv.config();
 
@@ -16,15 +18,19 @@ app.use(express.json());
 // Routes
 app.use('/api/carousel', carouselRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/addresses', addressRoutes);
+app.use('/api/orders', orderRoutes);
 
-// Debug route to test server
-app.get('/', (req, res) => {
-    res.send('Server is running');
-});
-
-// Debug route to test products endpoint
-app.get('/api/test', (req, res) => {
-    res.json({ message: 'API is working', routes: ['/api/products', '/api/products/filters', '/api/carousel'] });
+// Error handling for undefined API routes (must be last)
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({
+            success: false,
+            message: 'API route not found',
+            path: req.path
+        });
+    }
+    next();
 });
 
 app.listen(PORT, () => {
