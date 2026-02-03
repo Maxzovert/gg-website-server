@@ -21,7 +21,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/orders', orderRoutes);
 
-// Error handling for undefined API routes (must be last)
+// Error handling for undefined API routes
 app.use((req, res, next) => {
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({
@@ -31,6 +31,16 @@ app.use((req, res, next) => {
         });
     }
     next();
+});
+
+// Global error handler - ensures we always return JSON (no HTML "Internal Server Error")
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: err.message || String(err)
+    });
 });
 
 app.listen(PORT, () => {

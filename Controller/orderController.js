@@ -29,32 +29,53 @@ export const createOrder = async (req, res) => {
             });
         }
 
+        // Normalize payment_method (accept both 'cod' and 'COD')
+        const normalizedPaymentMethod = String(payment_method).toLowerCase() === 'cod' ? 'cod' : String(payment_method);
+
         // Calculate final amount
         const final_amount = (total_amount || 0) - (discount_amount || 0) + (shipping_charges || 0);
 
         // Generate order number: GG-YYYYMMDD-XXXXX
         const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        const { count } = await supabase
+        const todayStart = new Date().toISOString().split('T')[0];
+        const { count, error: countError } = await supabase
             .from('orders')
             .select('*', { count: 'exact', head: true })
-            .gte('created_at', new Date().toISOString().split('T')[0]);
-        
+            .gte('created_at', todayStart);
+
+        if (countError) {
+            console.error('Order count error:', countError);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to generate order number',
+                error: countError.message
+            });
+        }
+
         const orderNumber = `GG-${today}-${String((count || 0) + 1).padStart(5, '0')}`;
 
-        // Create order
+        // Create order - only include columns that exist in your schema (no Shiprocket columns here)
+        // Remove undefined so Supabase doesn't get invalid values
         const orderData = {
             user_id,
             order_number: orderNumber,
             address_id,
-            total_amount: total_amount || 0,
-            discount_amount: discount_amount || 0,
-            shipping_charges: shipping_charges || 0,
-            final_amount,
-            payment_method,
+            total_amount: Number(total_amount) || 0,
+            discount_amount: Number(discount_amount) || 0,
+            shipping_charges: Number(shipping_charges) || 0,
+            final_amount: Number(final_amount),
+            payment_method: normalizedPaymentMethod,
             payment_status: 'pending',
             order_status: 'pending',
-            notes: notes || null
+            notes: notes ?? null
         };
+        if (Number.isNaN(orderData.final_amount)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid amount values',
+                error: 'total_amount, discount_amount, or shipping_charges are invalid'
+            });
+        }
 
         const { data: order, error: orderError } = await supabase
             .from('orders')
@@ -63,14 +84,21 @@ export const createOrder = async (req, res) => {
             .single();
 
         if (orderError) {
+            console.error('Order insert error:', orderError);
+            const isRls = orderError.message?.toLowerCase().includes('policy') ||
+                orderError.message?.toLowerCase().includes('row-level security') ||
+                orderError.code === '42501';
             return res.status(500).json({
                 success: false,
                 message: 'Failed to create order',
-                error: orderError.message
+                error: orderError.message,
+                code: orderError.code,
+                details: orderError.details,
+                hint: isRls ? 'Use SUPABASE_SERVICE_ROLE_KEY (not anon key) in website Server .env to bypass RLS.' : undefined
             });
         }
 
-        // Create order items
+        // Create order items - frontend sends product_id from item.id (product id)
         const orderItems = items.map(item => ({
             order_id: order.id,
             product_id: item.product_id,
@@ -86,6 +114,7 @@ export const createOrder = async (req, res) => {
             .select();
 
         if (itemsError) {
+            console.error('Order items insert error:', itemsError);
             // Rollback order creation
             await supabase
                 .from('orders')
@@ -95,20 +124,29 @@ export const createOrder = async (req, res) => {
             return res.status(500).json({
                 success: false,
                 message: 'Failed to create order items',
-                error: itemsError.message
+                error: itemsError.message,
+                code: itemsError.code,
+                details: itemsError.details
             });
         }
 
-        // Update product stock quantities (optional - can be handled separately)
+        // Update product stock quantities (optional - skip if RPC does not exist)
         for (const item of items) {
-            await supabase.rpc('decrement_stock', {
-                product_id: item.product_id,
-                quantity: item.quantity
-            }).catch(() => {});
+            try {
+                const { error } = await supabase.rpc('decrement_stock', {
+                    product_id: item.product_id,
+                    quantity: item.quantity
+                });
+                if (error) {
+                    console.warn('decrement_stock RPC error (may not exist):', error.message);
+                }
+            } catch (e) {
+                // RPC may not exist or other error - ignore so order still succeeds
+            }
         }
 
         // Fetch complete order with address and items
-        const { data: completeOrder } = await supabase
+        const { data: completeOrder, error: fetchError } = await supabase
             .from('orders')
             .select(`
                 *,
@@ -118,16 +156,34 @@ export const createOrder = async (req, res) => {
             .eq('id', order.id)
             .single();
 
-        res.status(201).json({
-            success: true,
-            message: 'Order created successfully',
-            data: completeOrder || { ...order, order_items: createdItems }
-        });
+        if (fetchError) {
+            console.error('Order fetch after create error:', fetchError);
+        }
+
+        // Build safe response (avoid circular refs / non-JSON values)
+        const responseData = completeOrder || { ...order, addresses: null, order_items: createdItems };
+        try {
+            res.status(201).json({
+                success: true,
+                message: 'Order created successfully',
+                data: responseData
+            });
+        } catch (jsonErr) {
+            console.error('JSON serialize error:', jsonErr);
+            res.status(201).json({
+                success: true,
+                message: 'Order created successfully',
+                data: { id: order.id, order_number: order.order_number, order_items: createdItems }
+            });
+        }
     } catch (error) {
+        console.error('Create order exception:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error',
-            error: error.message
+            error: error.message,
+            code: error.code,
+            details: error.details
         });
     }
 };
