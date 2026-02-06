@@ -5,6 +5,7 @@ import carouselRoutes from './Routes/carouselRoutes.js';
 import productRoutes from './Routes/productRoutes.js';
 import addressRoutes from './Routes/addressRoutes.js';
 import orderRoutes from './Routes/orderRoutes.js';
+import staticImagesRoutes from './Routes/staticImagesRoutes.js';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use('/api/carousel', carouselRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/static-images', staticImagesRoutes);
 
 // Error handling for undefined API routes
 app.use((req, res, next) => {
