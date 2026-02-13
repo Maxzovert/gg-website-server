@@ -120,6 +120,7 @@ export const createOrder = async (req, res) => {
                 order_items (*)
             `)
             .eq('id', order.id)
+            .single();
         const responseData = completeOrder || { ...order, addresses: null, order_items: createdItems };
         res.status(201).json({
             success: true,

@@ -5,6 +5,8 @@ import carouselRoutes from './Routes/carouselRoutes.js';
 import productRoutes from './Routes/productRoutes.js';
 import addressRoutes from './Routes/addressRoutes.js';
 import orderRoutes from './Routes/orderRoutes.js';
+import paymentRoutes from './Routes/paymentRoutes.js';
+import { paymentCallback } from './Controller/paymentController.js';
 import staticImagesRoutes from './Routes/staticImagesRoutes.js';
 import reviewRoutes from './Routes/reviewRoutes.js';
 import preorderRoutes from './Routes/preorderRoutes.js';
@@ -15,9 +17,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS: allow production client and local dev origins
+// CORS: allow production client, local dev, and Easebuzz (user is redirected from Easebuzz to our callback)
 const allowedOrigins = [
     'https://gg-website-client.vercel.app',
+    'https://testpay.easebuzz.in',
+    'https://pay.easebuzz.in',
     'http://localhost:5173',
     'http://localhost:3000',
     'http://127.0.0.1:5173',
@@ -32,9 +36,27 @@ if (process.env.CORS_ORIGIN) {
     });
 }
 
+function isAllowedOrigin(origin) {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+    try {
+        const u = new URL(origin);
+        const host = u.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1') return true;
+        if (host.endsWith('.easebuzz.in') || host === 'easebuzz.in') return true;
+    } catch (_) {}
+    return false;
+}
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Payment callback must be registered BEFORE CORS so Easebuzz redirect is never blocked
+app.post('/api/payment/callback', paymentCallback);
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
@@ -49,12 +71,11 @@ app.use(cors({
 // Ensure CORS header is set on error responses (so browser doesn't show "blocked by CORS")
 const setCorsIfAllowed = (req, res) => {
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
+    if (origin && isAllowedOrigin(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
 };
-app.use(express.json());
 
 // Health check (for Render / load balancers)
 app.get('/api/health', (req, res) => res.status(200).json({ ok: true }));
@@ -67,6 +88,7 @@ app.use('/api/carousel', carouselRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/payment', paymentRoutes);
 app.use('/api/static-images', staticImagesRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/preorders', preorderRoutes);
