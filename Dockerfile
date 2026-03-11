@@ -13,5 +13,5 @@ COPY . .
 ENV PORT=3001
 EXPOSE 3001
 
-# Do not bake .env into the image — pass SUPABASE_* and PORT at runtime
+# Do not bake .env into the image — pass at runtime: DATABASE_URL, AWS_*, JWT_*, EASEBUZZ_*, SMTP_*, FRONTEND_URL, PORT
 CMD ["node", "index.js"]
