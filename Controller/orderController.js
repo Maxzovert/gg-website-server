@@ -131,18 +131,14 @@ export const createOrder = async (req, res) => {
 
 export const getUserOrders = async (req, res) => {
     try {
-        const { userId } = req.params;
         const authUserId = req.user?.id;
         if (!authUserId) {
             return res.status(401).json({ success: false, message: 'Not authenticated' });
         }
-        if (!userId || String(userId) !== String(authUserId)) {
-            return res.status(403).json({ success: false, message: 'Forbidden' });
-        }
 
         const ordersRes = await query(
             'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC',
-            [userId],
+            [authUserId],
         );
         const orders = ordersRes.rows || [];
         if (orders.length === 0) {
@@ -152,7 +148,7 @@ export const getUserOrders = async (req, res) => {
         const orderIds = orders.map((o) => o.id);
         const addressIds = [...new Set(orders.map((o) => o.address_id).filter(Boolean))];
         const [itemsRes, addrRes] = await Promise.all([
-            query('SELECT * FROM order_items WHERE order_id = ANY($1::int[])', [orderIds]),
+            query('SELECT * FROM order_items WHERE order_id = ANY($1::uuid[])', [orderIds]),
             addressIds.length > 0
                 ? query('SELECT * FROM addresses WHERE id = ANY($1)', [addressIds])
                 : { rows: [] },
@@ -176,6 +172,7 @@ export const getUserOrders = async (req, res) => {
 
         res.status(200).json({ success: true, data });
     } catch (error) {
+        console.error('getUserOrders error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error',
