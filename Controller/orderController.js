@@ -4,8 +4,6 @@ import { ensureCashbackSchema } from './cashbackController.js';
 import { validateCheckoutTotals, amountsMatch } from '../utils/checkoutPricing.js';
 import { queueNewOrderNotification } from '../utils/adminNotification.js';
 
-const isProduction = process.env.NODE_ENV === 'production';
-
 export const createOrder = async (req, res) => {
     const client = await pool.connect();
     try {
@@ -57,11 +55,11 @@ export const createOrder = async (req, res) => {
 
         const normalizedPaymentMethod =
             String(payment_method).toLowerCase() === 'cod' ? 'cod' : String(payment_method);
-
-        if (isProduction && normalizedPaymentMethod === 'cod') {
-            return res.status(403).json({
+        const allowedDirectMethods = new Set(['cod', 'wallet']);
+        if (!allowedDirectMethods.has(normalizedPaymentMethod)) {
+            return res.status(400).json({
                 success: false,
-                message: 'Cash on Delivery is not available in production',
+                message: 'Invalid payment method for direct order. Use COD or wallet.',
             });
         }
 
@@ -73,6 +71,7 @@ export const createOrder = async (req, res) => {
             clientDiscountAmount: discount_amount,
             shipping_charges,
             blessing_charge,
+            payment_method: normalizedPaymentMethod,
         });
         if (!pricing.ok) {
             return res.status(pricing.status || 400).json({
