@@ -1,0 +1,53 @@
+name: gawriganga-ec2
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: gawriganga-api:latest
+    container_name: gg-api
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "${PORT:-3001}:3001"
+
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+
+      DATABASE_URL: ${DATABASE_URL}
+      PGSSLMODE: ${PGSSLMODE}
+
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+
+      FRONTEND_URL: ${FRONTEND_URL}
+
+      EASEBUZZ_KEY: ${EASEBUZZ_KEY}
+      EASEBUZZ_SALT: ${EASEBUZZ_SALT}
+      EASEBUZZ_ENV: ${EASEBUZZ_ENV:-test}
+
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+
+      MAIL_FROM: ${MAIL_FROM}
+
+    logging:
+      driver: json-file
+
+      options:
+        max-size: "10m"
+        max-file: "3"

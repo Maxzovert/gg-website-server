@@ -35,3 +35,5 @@ build/
 # Queries folder
 querries/
 Querries/
+.env
+.env.*
