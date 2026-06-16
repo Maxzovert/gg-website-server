@@ -84,6 +84,129 @@ function intersects(a, b) {
   return a.some((x) => setB.has(x));
 }
 
+const ALL_CATEGORY_SENTINELS = new Set([
+  'all',
+  'all categories',
+  'all category',
+  'any',
+  'everywhere',
+  '*',
+  'every',
+]);
+
+function tokenFromArrayItem(item) {
+  if (item == null) return '';
+  if (typeof item === 'object' && !Array.isArray(item)) {
+    return String(item.name || item.label || item.category || item.id || '').trim();
+  }
+  return String(item).trim();
+}
+
+function parseStringArrayField(value) {
+  if (Array.isArray(value)) {
+    return value.map(tokenFromArrayItem).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map(tokenFromArrayItem).filter(Boolean);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const token = tokenFromArrayItem(parsed);
+        return token ? [token] : [];
+      }
+    } catch {
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        return trimmed
+          .slice(1, -1)
+          .split(',')
+          .map((part) => part.replace(/^"|"$/g, '').trim())
+          .filter(Boolean);
+      }
+      return trimmed.split(',').map((part) => part.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function categoryVariants(name) {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (!normalized) return [];
+  if (normalized === 'rudraksha' || normalized === 'rudrakshas') {
+    return ['rudraksha', 'rudrakshas'];
+  }
+  if (normalized === 'tulsi mala' || normalized === 'tulsimala') {
+    return ['tulsi mala', 'tulsimala'];
+  }
+  if (normalized === 'accessories' || normalized === 'accessory') {
+    return ['accessories', 'accessory'];
+  }
+  return [normalized];
+}
+
+function joinCategoryList(names) {
+  const list = (names || []).filter(Boolean);
+  if (list.length === 0) return '';
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+}
+
+async function getCategoryLookups() {
+  const res = await query('SELECT id::text AS id, name FROM categories');
+  const byId = new Map();
+  const byNameLower = new Map();
+  (res.rows || []).forEach((row) => {
+    const id = String(row.id || '').trim();
+    const name = String(row.name || '').trim();
+    if (id) byId.set(id, name);
+    if (name) byNameLower.set(name.toLowerCase(), name);
+  });
+  return { byId, byNameLower };
+}
+
+function resolveApplicableCategories(raw, lookups) {
+  const parsed = parseStringArrayField(raw);
+  const display = [];
+  const matchKeys = [];
+  const seen = new Set();
+
+  for (const item of parsed) {
+    const token = String(item || '').trim();
+    if (!token) continue;
+    const lower = token.toLowerCase();
+    if (ALL_CATEGORY_SENTINELS.has(lower)) continue;
+
+    const resolvedName =
+      lookups?.byId?.get(token) ||
+      lookups?.byNameLower?.get(lower) ||
+      token;
+    const key = String(resolvedName).trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    display.push(resolvedName);
+    matchKeys.push(key);
+  }
+
+  return {
+    display,
+    matchKeys,
+    appliesToAll: display.length === 0,
+  };
+}
+
+function categoriesMatch(cartCategoryNames, applicableCategories) {
+  if (applicableCategories.length === 0) return true;
+  const cartSet = new Set(cartCategoryNames.flatMap((c) => categoryVariants(c)));
+  return applicableCategories.some((cat) =>
+    categoryVariants(cat).some((variant) => cartSet.has(variant)),
+  );
+}
+
 export async function evaluateCouponForCart({ code, items, userId = null }) {
   const couponCode = normalizeCode(code);
   if (!couponCode) {
@@ -111,18 +234,30 @@ export async function evaluateCouponForCart({ code, items, userId = null }) {
     };
   }
 
-  const applicableProductIds = Array.isArray(coupon.applicable_product_ids)
-    ? coupon.applicable_product_ids.map((id) => String(id).trim()).filter(Boolean)
-    : [];
+  const applicableProductIds = parseStringArrayField(coupon.applicable_product_ids)
+    .map((id) => String(id).trim())
+    .filter(Boolean);
   if (applicableProductIds.length > 0 && !intersects(productIds, applicableProductIds)) {
     return { ok: false, status: 400, message: 'Coupon is not applicable to selected products' };
   }
 
-  const applicableCategories = Array.isArray(coupon.applicable_categories)
-    ? coupon.applicable_categories.map((c) => String(c).trim().toLowerCase()).filter(Boolean)
-    : [];
-  if (applicableCategories.length > 0 && !intersects(categoryNames, applicableCategories)) {
-    return { ok: false, status: 400, message: 'Coupon is not applicable to selected categories' };
+  const categoryLookups = await getCategoryLookups();
+  const resolvedCategories = resolveApplicableCategories(
+    coupon.applicable_categories,
+    categoryLookups,
+  );
+  if (
+    !resolvedCategories.appliesToAll &&
+    !categoriesMatch(categoryNames, resolvedCategories.matchKeys)
+  ) {
+    const label = joinCategoryList(resolvedCategories.display);
+    return {
+      ok: false,
+      status: 400,
+      message: label
+        ? `Coupon is only applicable on ${label}`
+        : 'Coupon is not applicable to items in your cart',
+    };
   }
 
   if (coupon.usage_limit_total != null) {
@@ -168,7 +303,8 @@ export async function evaluateCouponForCart({ code, items, userId = null }) {
 export const listPublicCoupons = async (_req, res) => {
   try {
     const result = await query(
-      `SELECT id, code, discount_type, discount_value, minimum_order_amount, maximum_discount, start_date, expiry_date, source_type, source_name,
+      `SELECT id, code, discount_type, discount_value, minimum_order_amount, start_date, expiry_date,
+              source_type, source_name,
               CASE
                 WHEN (start_date IS NULL OR start_date <= NOW())
                  AND (expiry_date IS NULL OR expiry_date >= NOW())
