@@ -215,6 +215,7 @@ const setCorsIfAllowed = (req, res) => {
 };
 
 // Health check (for Render / load balancers)
+app.get('/', (_req, res) => res.status(200).json({ ok: true, service: 'gawriganga-api' }));
 app.get('/api/health', (req, res) => res.status(200).json({ ok: true }));
 
 // Mail status — in production require ?secret=HEALTH_MAIL_SECRET (or omit route)
