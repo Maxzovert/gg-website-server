@@ -430,7 +430,8 @@ export const getProductBySlug = async (req, res) => {
             `SELECT id, slug, name, description, short_description, price, stock_quantity,
                     category_id, subcategory, deity, benefits, elements, purposes, planet, rarity, status, created_at,
                     discount_percent, is_featured, sale_type,
-                    product_measure_value, product_measure_unit, who_can_use
+                    product_measure_value, product_measure_unit, who_can_use,
+                    meta_title, meta_description
              FROM products WHERE slug = $1 AND status = 'active'`,
             [slug],
         );
@@ -480,6 +481,8 @@ export const getProductBySlug = async (req, res) => {
                 video_url: videoUrl,
                 measures: measuresFromProductRow(product),
                 who_can_use: pickTextField(product, 'who_can_use', 'whoCanUse', 'WhoCanUse'),
+                meta_title: product.meta_title || '',
+                meta_description: product.meta_description || '',
             },
         });
     } catch (error) {
