@@ -1,6 +1,6 @@
 import { query } from '../config/db.js';
 import { getS3PublicUrl } from '../config/s3.js';
-import { landingSitemapPaths } from '../../client/src/seo/landings.js';
+import { landingSitemapPaths } from '../seo/landingPaths.js';
 
 const PRODUCT_IMAGE_KEYS = ['image1', 'image2', 'image3', 'image4', 'image5', 'image6', 'image7', 'image8'];
 const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i;
