@@ -19,6 +19,7 @@ import cashbackRoutes from './Routes/cashbackRoutes.js';
 import couponRoutes from './Routes/couponRoutes.js';
 import deliveryChargeRoutes from './Routes/deliveryChargeRoutes.js';
 import blogRoutes from './Routes/blogRoutes.js';
+import seoRoutes from './Routes/seoRoutes.js';
 import preorderRoutes from './Routes/preorderRoutes.js';
 import contactRoutes from './Routes/contactRoutes.js';
 import guidanceRoutes from './Routes/guidanceRoutes.js';
@@ -214,6 +215,7 @@ const setCorsIfAllowed = (req, res) => {
 };
 
 // Health check (for Render / load balancers)
+app.get('/', (_req, res) => res.status(200).json({ ok: true, service: 'gawriganga-api' }));
 app.get('/api/health', (req, res) => res.status(200).json({ ok: true }));
 
 // Mail status — in production require ?secret=HEALTH_MAIL_SECRET (or omit route)
@@ -241,6 +243,7 @@ app.use('/api', cashbackRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/delivery-charges', deliveryChargeRoutes);
 app.use('/api/blogs', blogRoutes);
+app.use('/api/seo', seoRoutes);
 app.use('/api/preorders', preorderRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/guidance-requests', guidanceRoutes);
